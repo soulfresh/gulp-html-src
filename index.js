@@ -1,11 +1,11 @@
 var fs = require('fs'),
-    path = require('path'),
-    url = require('url'),
+	path = require('path'),
+	url = require('url'),
 	File = require('vinyl'),
-    cheerio = require('cheerio'),
-    through = require('through2'),
-    extend = require('extend'),
-    q = require('q');
+	cheerio = require('cheerio'),
+	through = require('through2'),
+	extend = require('extend'),
+	q = require('q');
 
 module.exports = function(options) {
 	var defaults = {
@@ -26,7 +26,7 @@ module.exports = function(options) {
 	};
 
 	var selectedPresets = (options && options.presets && presets[options.presets]) ||
-	                     presets[defaults.presets];
+						 presets[defaults.presets];
 
 	
 	options = extend({}, defaults, selectedPresets, options);
@@ -63,29 +63,29 @@ module.exports = function(options) {
 		return deferred.promise;
 	};
 
-    /**
-     * Returns an array of matched files - empty if no file is found.
-     * @param contents
-     * @returns {Array}
-     */
-    var transformFile = function transformFile(contents) {
-        var $ = cheerio.load(contents.toString());
-        var result = [];
-        $(options.selector).each(function() {
-            var element = $(this);
-            var fileName = options.getFileName(element);
-            result.push(fileName);
-        });
+	/**
+	 * Returns an array of matched files - empty if no file is found.
+	 * @param contents
+	 * @returns {Array}
+	 */
+	var transformFile = function transformFile(contents) {
+		var $ = cheerio.load(contents.toString());
+		var result = [];
+		$(options.selector).each(function() {
+			var element = $(this);
+			var fileName = options.getFileName(element);
+			result.push(fileName);
+		});
 
-        return result;
-    };
+		return result;
+	};
 
 
 	var transform = function(file, enc, callback) {
 		var stream = this;
 		var bufferReadPromises = [];
-        var fileNames;
-        var files = [];
+		var fileNames;
+		var files = [];
 		
 		if (file.isNull()) {
 			// No contents - do nothing
@@ -93,80 +93,97 @@ module.exports = function(options) {
 			callback();
 		}
 
-        if (file.isStream()) {
-            streamToBuffer(file.contents)
-                .then(function(contents) {
+		if (file.isStream()) {
+			streamToBuffer(file.contents)
+				.then(function(contents) {
 
-                    // Get all file names from contents of file.
-                    fileNames = transformFile(contents);
+					// Get all file names from contents of file.
+					fileNames = transformFile(contents);
 
-                    // Iterate over found file names.
-                    fileNames.forEach(function (fileName) {
-                        if (isRelative(fileName)) {
-                            var absoluteFileName = makeAbsoluteFileName(file, fileName);
-                            stream.push(new File({
-                                cwd: file.cwd,
-                                base: file.base,
-                                path: absoluteFileName,
-                                contents: options.createReadStream(absoluteFileName)
-                            }));
-                        }
-                    });
+					// Iterate over found file names.
+					fileNames.forEach(function (fileName) {
+						if (isRelative(fileName)) {
+							var absoluteFileName = makeAbsoluteFileName(file, fileName);
+							fs.stat(absoluteFileName, function(err, stats){
+								if (err) {
+									stream.emit('error', err);
+								}
+								else {
+									stream.push(new File({
+										cwd: file.cwd,
+										base: file.base,
+										path: absoluteFileName,
+										contents: options.createReadStream(absoluteFileName),
+										stat: stats
+									}));
+									
+								}
+							});
+						}
+					});
 
-                    // Check if we should include HTML file.
-                    if (options.includeHtmlInOutput) {
-                        stream.push(file);
-                    }
+					// Check if we should include HTML file.
+					if (options.includeHtmlInOutput) {
+						stream.push(file);
+					}
 
-                    callback();
-                }, function(err) {
-                    stream.emit('error', err);
-                });
-        }
+					callback();
+				}, function(err) {
+					stream.emit('error', err);
+				});
+		}
 
-        if (file.isBuffer()) {
+		if (file.isBuffer()) {
 
-            // Get all file names from contents of file.
-            fileNames = transformFile(file.contents);
+			// Get all file names from contents of file.
+			fileNames = transformFile(file.contents);
 
-            // Iterate over found file names.
-            fileNames.forEach(function (fileName, index) {
-                if (isRelative(fileName)) {
-                    try	{
-                        var absoluteFileName = makeAbsoluteFileName(file, fileName);
-                        var readPromise = streamToBuffer(options.createReadStream(absoluteFileName))
-                            .then(function(contents) {
-                                files[index] = new File({
-                                    cwd: file.cwd,
-                                    base: file.base,
-                                    path: absoluteFileName,
-                                    contents: contents
-                                });
-                            }, function(err) {
-                                stream.emit('error', err);
-                            });
-                        bufferReadPromises.push(readPromise);
-                    }
-                    catch(err) {
-                        stream.emit('error', err);
-                    }
-                }
-            });
+			// Iterate over found file names.
+			fileNames.forEach(function (fileName, index) {
+				if (isRelative(fileName)) {
+					try	{
+						var absoluteFileName = makeAbsoluteFileName(file, fileName);
+						fs.stat(absoluteFileName, function(err, stats){
+							if(err){
+								stream.emit('error', err);
+							}
+							else {
+								var readPromise = streamToBuffer(options.createReadStream(absoluteFileName))
+									.then(function(contents) {
+										files[index] = new File({
+											cwd: file.cwd,
+											base: file.base,
+											path: absoluteFileName,
+											contents: contents,
+											stat: stats
+										});
+									}, function(err) {
+										stream.emit('error', err);
+									});
+								bufferReadPromises.push(readPromise);
+							}
+						});
+					}
+					catch(err) {
+						stream.emit('error', err);
+					}
+				}
+			});
 
-            // Wait for all reading to be done.
-            q.all(bufferReadPromises)
-                .then(function() {
-                    // Push all files into the stream in correct order.
-                    files.forEach(function (file) {
-                        stream.push(file);
-                    });
+			// Wait for all reading to be done.
+			q.all(bufferReadPromises)
+				.then(function() {
+					// Push all files into the stream in correct order.
+					files.forEach(function (file) {
+						stream.push(file);
+					});
 
-                    // end of contents, no further matches for this file
-                    if (options.includeHtmlInOutput) {
-                        stream.push(file);
-                    }
-                    callback();
-                });
+					// end of contents, no further matches for this file
+					if (options.includeHtmlInOutput) {
+						stream.push(file);
+					}
+					callback();
+				});
 		}
 	};
 	
