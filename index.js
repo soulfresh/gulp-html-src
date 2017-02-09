@@ -142,6 +142,9 @@ module.exports = function(options) {
 			fileNames.forEach(function (fileName, index) {
 				if (isRelative(fileName)) {
 					try	{
+						var deferred = q.defer();
+						bufferReadPromises.push(deferred.promise);
+						
 						var absoluteFileName = makeAbsoluteFileName(file, fileName);
 						fs.stat(absoluteFileName, function(err, stats){
 							if(err){
@@ -157,10 +160,10 @@ module.exports = function(options) {
 											contents: contents,
 											stat: stats
 										});
+										deferred.resolve(true);
 									}, function(err) {
 										stream.emit('error', err);
 									});
-								bufferReadPromises.push(readPromise);
 							}
 						});
 					}
